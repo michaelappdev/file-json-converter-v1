@@ -1,11 +1,14 @@
+// Load environment variables based on environment
 require('dotenv').config({ 
   path: process.env.NODE_ENV === 'production' ? '.env' : '.env.local'
 });
 const express = require('express');
 const axios = require('axios');
-const fs = require('fs').promises; // Use promise-based fs
+const fs = require('fs').promises;
+const fsSync = require('fs');  // For createReadStream
 const path = require('path');
-const os = require('os'); // For temp directory
+const os = require('os');
+const FormData = require('form-data');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -49,13 +52,15 @@ app.post('/process-file', validateFileUrl, validateApiConfig, async (req, res) =
     });
 
     // Create temp file with unique name
-    const fileName = `${Date.now()}-${path.basename(fileUrl)}`;
+    const url = new URL(fileUrl);
+    const originalFileName = path.basename(url.pathname.split('/').pop().split('?')[0]);
+    const fileName = `${Date.now()}-${originalFileName}`;
     tempFilePath = path.join(os.tmpdir(), fileName);
     await fs.writeFile(tempFilePath, response.data);
 
     // Send file to Unstructured.io
     const formData = new FormData();
-    formData.append('files', fs.createReadStream(tempFilePath));
+    formData.append('files', fsSync.createReadStream(tempFilePath));
 
     const unstructuredResponse = await axios.post(
       process.env.UNSTRUCTURED_API_URL, 
@@ -66,7 +71,8 @@ app.post('/process-file', validateFileUrl, validateApiConfig, async (req, res) =
           'unstructured-api-key': process.env.UNSTRUCTURED_API_KEY,
           ...formData.getHeaders()
         },
-        timeout: 30000 // 30 second timeout for processing
+        timeout: 30000, // 30 second timeout for processing
+        maxBodyLength: Infinity
       }
     );
 
@@ -76,7 +82,9 @@ app.post('/process-file', validateFileUrl, validateApiConfig, async (req, res) =
     console.error('Error details:', {
       message: error.message,
       code: error.code,
-      response: error.response?.data
+      response: error.response?.data,
+      tempFilePath: tempFilePath,
+      stack: error.stack
     });
 
     // Handle specific error types
@@ -85,6 +93,12 @@ app.post('/process-file', validateFileUrl, validateApiConfig, async (req, res) =
     }
     if (error.response?.status === 413) {
       return res.status(413).json({ error: 'File too large' });
+    }
+    if (error.code === 'ENOENT') {
+      return res.status(500).json({ 
+        error: 'File system error',
+        message: 'Failed to create or access temporary file'
+      });
     }
     if (axios.isAxiosError(error)) {
       return res.status(502).json({ 
