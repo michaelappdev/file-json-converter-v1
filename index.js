@@ -1,13 +1,127 @@
-require('dotenv').config({ path: '.env.local' });
+require('dotenv').config({ 
+  path: process.env.NODE_ENV === 'production' ? '.env' : '.env.local'
+});
 const express = require('express');
-const app = express();
+const axios = require('axios');
+const fs = require('fs').promises; // Use promise-based fs
+const path = require('path');
+const os = require('os'); // For temp directory
 
+const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => {
-  res.send('Hello World!');
+// Middleware
+app.use(express.json());
+
+// Input validation middleware
+const validateFileUrl = (req, res, next) => {
+  const { fileUrl } = req.body;
+  if (!fileUrl) {
+    return res.status(400).json({ error: 'fileUrl is required' });
+  }
+  try {
+    new URL(fileUrl); // Validate URL format
+    next();
+  } catch (error) {
+    res.status(400).json({ error: 'Invalid fileUrl format' });
+  }
+};
+
+// Validate API configuration middleware
+const validateApiConfig = (req, res, next) => {
+  const { UNSTRUCTURED_API_URL, UNSTRUCTURED_API_KEY } = process.env;
+  if (!UNSTRUCTURED_API_URL || !UNSTRUCTURED_API_KEY) {
+    return res.status(500).json({ error: 'API configuration is missing' });
+  }
+  next();
+};
+
+app.post('/process-file', validateFileUrl, validateApiConfig, async (req, res) => {
+  const { fileUrl } = req.body;
+  let tempFilePath;
+
+  try {
+    // Download the file
+    const response = await axios.get(fileUrl, { 
+      responseType: 'arraybuffer',
+      timeout: 5000, // 5 second timeout
+      maxContentLength: 10 * 1024 * 1024 // 10MB max file size
+    });
+
+    // Create temp file with unique name
+    const fileName = `${Date.now()}-${path.basename(fileUrl)}`;
+    tempFilePath = path.join(os.tmpdir(), fileName);
+    await fs.writeFile(tempFilePath, response.data);
+
+    // Send file to Unstructured.io
+    const formData = new FormData();
+    formData.append('files', fs.createReadStream(tempFilePath));
+
+    const unstructuredResponse = await axios.post(
+      process.env.UNSTRUCTURED_API_URL, 
+      formData, 
+      {
+        headers: {
+          'Accept': 'application/json',
+          'unstructured-api-key': process.env.UNSTRUCTURED_API_KEY,
+          ...formData.getHeaders()
+        },
+        timeout: 30000 // 30 second timeout for processing
+      }
+    );
+
+    // Send the JSON response back to the client
+    res.json(unstructuredResponse.data);
+  } catch (error) {
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      response: error.response?.data
+    });
+
+    // Handle specific error types
+    if (error.code === 'ECONNABORTED') {
+      return res.status(504).json({ error: 'Request timeout' });
+    }
+    if (error.response?.status === 413) {
+      return res.status(413).json({ error: 'File too large' });
+    }
+    if (axios.isAxiosError(error)) {
+      return res.status(502).json({ 
+        error: 'External service error',
+        details: error.response?.data || error.message
+      });
+    }
+
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message
+    });
+  } finally {
+    // Clean up temp file if it exists
+    if (tempFilePath) {
+      try {
+        await fs.unlink(tempFilePath);
+      } catch (error) {
+        console.error('Error cleaning up temp file:', error);
+      }
+    }
+  }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+// Error handling for unhandled routes
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+// Start server
+const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
+app.listen(PORT, host, () => {
+  console.log(`Server running on ${host}:${PORT}`);
 });
