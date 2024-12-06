@@ -2,13 +2,29 @@
 
 A Node.js service that converts various file types (PDF, DOCX, etc.) to structured JSON format using the Unstructured.io API. This service accepts a public URL of a file, processes it through Unstructured.io, and returns structured JSON data.
 
+## Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant M as Middleware
+    participant U as Unstructured.io API
+
+    C->>M: POST /process-file with fileUrl
+    Note over M: Validate URL & API config
+    M->>M: Download file from URL
+    M->>U: Send file for processing
+    U->>M: Return structured JSON
+    M->>C: Return JSON response
+```
+
 ## Features
 
-- 📄 Supports multiple file formats (PDF, DOCX, etc.)
-- 🔄 Processes files from public URLs
-- ⚡ Fast and efficient file handling
-- 🔒 Secure environment variable configuration
-- 🚀 Ready for deployment on Railway
+- Supports multiple file formats (PDF, DOCX, etc.)
+- Processes files from public URLs
+- Fast and efficient file handling
+- Secure environment variable configuration
+- Ready for deployment on Railway
 
 ## Prerequisites
 
