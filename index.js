@@ -47,7 +47,7 @@ app.post('/process-file', validateFileUrl, validateApiConfig, async (req, res) =
     // Download the file
     const response = await axios.get(fileUrl, { 
       responseType: 'arraybuffer',
-      timeout: 5000, // 5 second timeout
+      timeout: 60000, // 60 second timeout
       maxContentLength: 10 * 1024 * 1024 // 10MB max file size
     });
 
@@ -71,7 +71,7 @@ app.post('/process-file', validateFileUrl, validateApiConfig, async (req, res) =
           'unstructured-api-key': process.env.UNSTRUCTURED_API_KEY,
           ...formData.getHeaders()
         },
-        timeout: 30000, // 30 second timeout for processing
+        timeout: 120000, // 120 second timeout for processing
         maxBodyLength: Infinity
       }
     );
