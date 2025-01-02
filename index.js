@@ -84,11 +84,12 @@ app.post('/process-file', validateFileUrl, validateApiConfig, validateR2Config, 
     formData.append('files', fsSync.createReadStream(tempFilePath));
 
     const unstructuredResponse = await axios.post(
-      process.env.UNSTRUCTURED_API_URL, 
+      'https://api.unstructuredapp.io/general/v0/general', 
       formData, 
       {
         headers: {
-          'Accept': 'application/json',
+          'accept': 'application/json',
+          'Content-Type': 'multipart/form-data',
           'unstructured-api-key': process.env.UNSTRUCTURED_API_KEY,
           ...formData.getHeaders()
         },
