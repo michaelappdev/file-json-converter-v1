@@ -1,7 +1,7 @@
 // Load environment variables based on environment
-require('dotenv').config({ 
-  path: process.env.NODE_ENV === 'production' ? '.env' : '.env.local'
-});
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
 const express = require('express');
 const axios = require('axios');
 const fs = require('fs').promises;
@@ -89,7 +89,7 @@ app.post('/process-file', validateFileUrl, validateApiConfig, validateR2Config, 
       {
         headers: {
           'Accept': 'application/json',
-          'x-api-key': process.env.UNSTRUCTURED_API_KEY,
+          'unstructured-api-key': process.env.UNSTRUCTURED_API_KEY,
           ...formData.getHeaders()
         },
         timeout: 300000, // 5 minutes timeout for processing
