@@ -89,7 +89,7 @@ app.post('/process-file', validateFileUrl, validateApiConfig, validateR2Config, 
       {
         headers: {
           'Accept': 'application/json',
-          'unstructured-api-key': process.env.UNSTRUCTURED_API_KEY,
+          'x-api-key': process.env.UNSTRUCTURED_API_KEY,
           ...formData.getHeaders()
         },
         timeout: 300000, // 5 minutes timeout for processing
