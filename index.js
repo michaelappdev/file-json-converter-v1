@@ -9,6 +9,8 @@ const fsSync = require('fs');  // For createReadStream
 const path = require('path');
 const os = require('os');
 const FormData = require('form-data');
+const { S3Client } = require('@aws-sdk/client-s3');
+const { Upload } = require('@aws-sdk/lib-storage');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -39,7 +41,26 @@ const validateApiConfig = (req, res, next) => {
   next();
 };
 
-app.post('/process-file', validateFileUrl, validateApiConfig, async (req, res) => {
+// Initialize S3 client for Cloudflare R2
+const s3Client = new S3Client({
+  region: 'auto',
+  endpoint: process.env.R2_ENDPOINT,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+  }
+});
+
+// Validate R2 configuration middleware
+const validateR2Config = (req, res, next) => {
+  const { R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_BUCKET } = process.env;
+  if (!R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_ENDPOINT || !R2_BUCKET) {
+    return res.status(500).json({ error: 'R2 configuration is missing' });
+  }
+  next();
+};
+
+app.post('/process-file', validateFileUrl, validateApiConfig, validateR2Config, async (req, res) => {
   const { fileUrl } = req.body;
   let tempFilePath;
 
@@ -76,8 +97,30 @@ app.post('/process-file', validateFileUrl, validateApiConfig, async (req, res) =
       }
     );
 
-    // Send the JSON response back to the client
-    res.json(unstructuredResponse.data);
+    // Store JSON response in Cloudflare R2
+    const jsonContent = JSON.stringify(unstructuredResponse.data);
+    const jsonFileName = `${Date.now()}-converted.json`;
+    
+    const upload = new Upload({
+      client: s3Client,
+      params: {
+        Bucket: process.env.R2_BUCKET,
+        Key: jsonFileName,
+        Body: jsonContent,
+        ContentType: 'application/json',
+      },
+    });
+
+    await upload.done();
+
+    // Generate the CDN URL
+    const cdnUrl = `${process.env.R2_PUBLIC_URL}/${jsonFileName}`;
+
+    // Send the CDN URL back to the client
+    res.json({ 
+      message: 'File processed and stored successfully',
+      url: cdnUrl
+    });
   } catch (error) {
     console.error('Error details:', {
       message: error.message,
